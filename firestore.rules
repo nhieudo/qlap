@@ -1,0 +1,102 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // User profiles
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId) || isAuthenticated();
+    }
+
+    // Connection test rule
+    match /test/{docId} {
+      allow read: if true;
+    }
+
+    // Roles collection
+    match /roles/{roleId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // Organization settings
+    match /organizationSettings/{settingId} {
+      allow read: if true; // Public for header and official receipts
+      allow write: if isAuthenticated();
+    }
+
+    // Residents collection
+    match /residents/{residentId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // Households collection
+    match /households/{householdId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // Financial transactions
+    match /financeTransactions/{txId} {
+      allow read: if true; // Public verification via QR code and code
+      allow create: if isAuthenticated();
+      // Approved vouchers cannot be physically deleted
+      allow delete: if false;
+      // When updating, if old doc was APPROVED, protect critical financial fields
+      allow update: if isAuthenticated() && (
+        resource.data.status != 'APPROVED' || 
+        (
+          request.resource.data.reconciliationCode == resource.data.reconciliationCode &&
+          request.resource.data.voucherNumber == resource.data.voucherNumber &&
+          request.resource.data.amount == resource.data.amount
+        )
+      );
+    }
+
+    // Financial categories
+    match /financeCategories/{catId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // Gift campaigns
+    match /giftCampaigns/{campId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // Gift recipients
+    match /giftRecipients/{recipId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // Invitations collection
+    match /invitations/{inviteId} {
+      allow read: if true; // Public for invite link verification
+      allow write: if isAuthenticated();
+    }
+
+    // System atomic counters
+    match /systemCounters/{counterId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Audit logs - Immutable: create only, no edit or delete
+    match /auditLogs/{logId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+  }
+}

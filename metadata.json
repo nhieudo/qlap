@@ -1,0 +1,6 @@
+{
+  "name": "Quản Lý Ấp",
+  "description": "Hệ thống thông tin quản lý hành chính, dân cư, tài chính và an sinh xã hội cấp cơ sở Ấp Bình Hòa",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
