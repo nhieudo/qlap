@@ -105,15 +105,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Check if system is uninitialized (no users or no admin)
   const checkFirstRun = async () => {
+    if (!auth.currentUser) {
+      setIsFirstRun(false);
+      return;
+    }
     try {
       const usersSnap = await getDocs(query(collection(db, 'users'), limit(1)));
-      if (usersSnap.empty) {
-        setIsFirstRun(true);
-      } else {
-        setIsFirstRun(false);
-      }
-    } catch (err) {
-      console.warn('Kiểm tra trạng thái hệ thống lần đầu:', err);
+      setIsFirstRun(usersSnap.empty);
+    } catch {
+      setIsFirstRun(false);
     }
   };
 
@@ -219,7 +219,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    checkFirstRun();
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
@@ -228,6 +227,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUserProfile(null);
         setRole(null);
         setPermissions([]);
+        setIsFirstRun(false);
       }
       setLoading(false);
     });

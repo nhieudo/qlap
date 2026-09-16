@@ -1,36 +1,29 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import {
-  initializeFirestore,
-  getFirestore,
-  doc,
-  getDoc,
-  type Firestore,
-} from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
+import { getFirestore, setLogLevel, type Firestore } from 'firebase/firestore';
+import fileConfig from '../../firebase-applet-config.json';
+
+// Support both committed JSON config and Vercel Environment Variables
+const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || fileConfig.apiKey,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || fileConfig.authDomain,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || fileConfig.projectId,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || fileConfig.storageBucket,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || fileConfig.messagingSenderId,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || fileConfig.appId,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || fileConfig.measurementId,
+  firestoreDatabaseId:
+    import.meta.env.VITE_FIREBASE_DATABASE_ID || fileConfig.firestoreDatabaseId || '(default)',
+};
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
 export const auth = getAuth(app);
 
-// Determine database ID
-const targetDbId =
-  firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)'
-    ? firebaseConfig.firestoreDatabaseId
-    : undefined;
-
-// Initialize Firestore with auto-detect long-polling for high stability in iframes & sandboxed environments
-let firestoreInstance: Firestore;
-try {
-  firestoreInstance = targetDbId
-    ? initializeFirestore(app, { experimentalAutoDetectLongPolling: true }, targetDbId)
-    : initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
-} catch {
-  // If already initialized, retrieve the existing instance
-  firestoreInstance = targetDbId ? getFirestore(app, targetDbId) : getFirestore(app);
-}
-
-export const db = firestoreInstance;
+// Initialize Firestore with specific database ID as required by Firebase Skill
+export const db: Firestore = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)'
+  ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
+  : getFirestore(app);
 
 export const databaseId = firebaseConfig.firestoreDatabaseId || '(default)';
 
@@ -39,16 +32,7 @@ googleProvider.setCustomParameters({
   prompt: 'select_account',
 });
 
-// Non-blocking connection probe to warm up connection without throwing unhandled server errors
-async function testConnection() {
-  try {
-    await getDoc(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn('Firestore đang hoạt động ở chế độ ngoại tuyến (offline cache).');
-    }
-  }
-}
-testConnection().catch(() => {});
+// Suppress transient backend retry notices while maintaining offline persistence
+setLogLevel('error');
 
 export { app };
