@@ -2,6 +2,7 @@ export type UserStatus = 'ACTIVE' | 'DISABLED' | 'active' | 'disabled';
 
 export interface UserProfile {
   uid: string;
+  id?: string;
   organizationId?: string;
   fullName: string;
   email: string;
@@ -64,6 +65,8 @@ export type PermissionCode =
   | 'backup.create'
   | 'backup.restore'
   | 'audit.view';
+
+export type PermissionAction = PermissionCode;
 
 export interface Role {
   id: string;
@@ -237,6 +240,13 @@ export interface FinanceCategory {
   description?: string;
   isActive: boolean;
   createdAt: string;
+  viewRoles?: string[]; // Role IDs with permission to view (empty or undefined means all can view)
+  editRoles?: string[]; // Role IDs with permission to edit/use (empty or undefined means all with finance permissions)
+  deleteRoles?: string[]; // Role IDs with permission to delete (empty or undefined means default admin/super_admin)
+  allowedUsersView?: string[];
+  allowedUsersEdit?: string[];
+  allowedUsersDelete?: string[];
+  isCustom?: boolean;
 }
 
 export type CampaignStatus =

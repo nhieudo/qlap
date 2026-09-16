@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
 import { EditProfileModal } from './EditProfileModal';
+import { PWAInstallButton } from './PWAInstallButton';
+import { PWAInstallModal } from './PWAInstallModal';
 
 interface HeaderProps {
   onOpenSearch?: () => void;
@@ -14,6 +16,7 @@ export function Header({ onSelectTab }: HeaderProps) {
   const { settings } = useSettings();
   const [menuOpen, setMenuOpen] = useState(false);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
+  const [isPWAModalOpen, setIsPWAModalOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -33,34 +36,36 @@ export function Header({ onSelectTab }: HeaderProps) {
   return (
     <>
       <header className="sticky top-0 z-40 bg-surface-container-lowest/95 backdrop-blur-md border-b border-surface-container-high transition-colors">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 h-16 flex items-center justify-between gap-2 sm:gap-4">
           {/* Left: Emblem and Official Title */}
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-on-primary shadow-sm ring-2 ring-primary/20 shrink-0">
-              {/* Vietnamese Emblem Style: Star with rice ears or official crest */}
-              <span className="material-symbols-outlined text-2xl text-amber-300">verified</span>
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-primary flex items-center justify-center text-on-primary shadow-sm ring-2 ring-primary/20 shrink-0">
+              <span className="material-symbols-outlined text-xl sm:text-2xl text-amber-300">verified</span>
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="font-headline-sm text-primary font-bold tracking-tight uppercase">
-                  QUẢN LÝ ẤP - CẤP CƠ SỞ
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <h1 className="font-bold text-xs sm:text-sm md:text-base text-primary tracking-tight uppercase truncate">
+                  QUẢN LÝ ẤP <span className="hidden xs:inline">- CẤP CƠ SỞ</span>
                 </h1>
-                <span className="hidden sm:inline-block px-2 py-0.5 text-[10px] font-semibold tracking-wider rounded-md bg-primary-fixed text-on-primary-fixed">
+                <span className="hidden sm:inline-block px-2 py-0.5 text-[10px] font-semibold tracking-wider rounded-md bg-primary-fixed text-on-primary-fixed shrink-0">
                   CHÍNH THỐNG
                 </span>
               </div>
-              <p className="text-xs text-on-surface-variant font-medium">
-                {settings.hamletName} • {settings.communeName} • {settings.districtName}
+              <p className="text-[11px] sm:text-xs text-on-surface-variant font-medium truncate">
+                {settings.hamletName} • {settings.communeName}
               </p>
             </div>
           </div>
 
-          {/* Right: Cloud Sync Status & User Profile */}
-          <div className="flex items-center gap-3">
+          {/* Right: PWA Install Button & User Profile */}
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            {/* PWA Install Button for all devices */}
+            <PWAInstallButton variant="header" />
+
             {/* Cloud Sync Status Indicator */}
-            <div className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded-full bg-surface-container text-xs text-on-surface-variant font-medium">
+            <div className="hidden lg:flex items-center gap-2 px-2.5 py-1 rounded-full bg-surface-container text-xs text-on-surface-variant font-medium">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span>Firestore Đã kết nối</span>
+              <span>Đã kết nối</span>
             </div>
 
             {/* User Profile / Menu */}
@@ -68,7 +73,7 @@ export function Header({ onSelectTab }: HeaderProps) {
               <div className="relative" ref={menuRef}>
                 <button
                   onClick={() => setMenuOpen(!menuOpen)}
-                  className="flex items-center gap-2 p-1.5 rounded-xl hover:bg-surface-container transition-colors text-left"
+                  className="flex items-center gap-1.5 sm:gap-2 p-1.5 rounded-xl hover:bg-surface-container transition-colors text-left"
                   aria-label="Menu người dùng"
                 >
                   {user.photoURL ? (
@@ -82,7 +87,7 @@ export function Header({ onSelectTab }: HeaderProps) {
                       {(userProfile?.fullName || user.email || 'CB').charAt(0).toUpperCase()}
                     </div>
                   )}
-                  <div className="hidden lg:block max-w-[180px]">
+                  <div className="hidden md:block max-w-[150px] lg:max-w-[180px]">
                     <div className="text-xs font-semibold text-on-surface leading-tight truncate">
                       {userProfile?.fullName || user.email}
                     </div>
@@ -120,6 +125,19 @@ export function Header({ onSelectTab }: HeaderProps) {
                         </span>
                       </div>
                     </div>
+
+                    {/* Button: Install PWA */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsPWAModalOpen(true);
+                        setMenuOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium rounded-xl text-amber-900 bg-amber-50 hover:bg-amber-100 transition-colors text-left font-bold mb-1"
+                    >
+                      <span className="material-symbols-outlined text-lg text-amber-700">install_mobile</span>
+                      <span>Cài đặt ứng dụng PWA</span>
+                    </button>
 
                     {/* Button: Edit Profile */}
                     <button
@@ -171,6 +189,12 @@ export function Header({ onSelectTab }: HeaderProps) {
       <EditProfileModal
         isOpen={isEditProfileOpen}
         onClose={() => setIsEditProfileOpen(false)}
+      />
+
+      {/* PWA Install Guide Modal */}
+      <PWAInstallModal
+        isOpen={isPWAModalOpen}
+        onClose={() => setIsPWAModalOpen(false)}
       />
     </>
   );

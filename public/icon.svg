@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="primaryGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#991b1b" />
+      <stop offset="100%" stop-color="#760009" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  
+  <!-- Outer Rounded Square / Badge -->
+  <rect width="512" height="512" rx="112" fill="url(#primaryGrad)" />
+  <circle cx="256" cy="256" r="216" fill="none" stroke="#facc15" stroke-width="8" stroke-dasharray="16 8" opacity="0.6"/>
+  <circle cx="256" cy="256" r="196" fill="none" stroke="#facc15" stroke-width="4" opacity="0.8"/>
+
+  <!-- Golden 5-pointed Star with subtle elevation -->
+  <!-- Center: 256, 256; Outer radius: 110, Inner radius: 46 -->
+  <polygon
+    points="
+      256.0,146.0
+      283.0,229.2
+      370.6,229.2
+      299.8,280.7
+      326.8,363.9
+      256.0,312.4
+      185.2,363.9
+      212.2,280.7
+      141.4,229.2
+      229.0,229.2
+    "
+    fill="#facc15"
+    stroke="#eab308"
+    stroke-width="4"
+    filter="url(#shadow)"
+  />
+
+  <!-- Government Official Ribbon / Text subtle accent -->
+  <path d="M176 400 L256 384 L336 400 L320 424 L256 412 L192 424 Z" fill="#facc15" opacity="0.9" />
+</svg>

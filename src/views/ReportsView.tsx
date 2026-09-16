@@ -1,28 +1,45 @@
 import { useState, useEffect } from 'react';
-import { getResidents, getHouseholds, getFinanceTransactions, getGiftCampaigns } from '../services/db';
-import { Resident, Household, FinanceTransaction, GiftCampaign } from '../types';
+import {
+  getResidents,
+  getHouseholds,
+  getFinanceTransactions,
+  getGiftCampaigns,
+  getFinanceCategories,
+} from '../services/db';
+import { Resident, Household, FinanceTransaction, GiftCampaign, FinanceCategory } from '../types';
 import { formatCurrencyVND } from '../utils/numberToWords';
+import { useSettings } from '../context/SettingsContext';
+import { exportComprehensiveAllTimeReportToExcel } from '../utils/excelExport';
+import ReportExportModal from '../components/ReportExportModal';
 
 export function ReportsView() {
+  const { settings } = useSettings();
   const [loading, setLoading] = useState(true);
   const [residents, setResidents] = useState<Resident[]>([]);
   const [households, setHouseholds] = useState<Household[]>([]);
   const [transactions, setTransactions] = useState<FinanceTransaction[]>([]);
   const [campaigns, setCampaigns] = useState<GiftCampaign[]>([]);
+  const [categories, setCategories] = useState<FinanceCategory[]>([]);
+
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [quickExporting, setQuickExporting] = useState(false);
+  const [exportSuccessMsg, setExportSuccessMsg] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
       try {
-        const [res, hh, tx, camp] = await Promise.all([
+        const [res, hh, tx, camp, cats] = await Promise.all([
           getResidents(),
           getHouseholds(),
           getFinanceTransactions(),
           getGiftCampaigns(),
+          getFinanceCategories(),
         ]);
         setResidents(res);
         setHouseholds(hh);
         setTransactions(tx);
         setCampaigns(camp);
+        setCategories(cats);
       } catch (err) {
         console.error(err);
       } finally {
@@ -129,6 +146,27 @@ export function ReportsView() {
   const totalGiftsDistributed = campaigns.reduce((sum, c) => sum + (c.deliveredCount || 0), 0);
   const totalWelfareBudget = campaigns.reduce((sum, c) => sum + (c.totalBudget || 0), 0);
 
+  const handleQuickExportAll = () => {
+    setQuickExporting(true);
+    try {
+      exportComprehensiveAllTimeReportToExcel({
+        residents,
+        households,
+        transactions,
+        categories,
+        campaigns,
+        settings,
+      });
+      setExportSuccessMsg('Đã xuất thành công Báo cáo Tổng hợp toàn bộ (Excel đa sheet)!');
+      setTimeout(() => setExportSuccessMsg(null), 4000);
+    } catch (err: any) {
+      console.error(err);
+      alert('Có lỗi khi xuất file Excel: ' + err.message);
+    } finally {
+      setQuickExporting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-20">
@@ -141,14 +179,53 @@ export function ReportsView() {
   return (
     <div className="space-y-6 pb-20">
       {/* Top Header */}
-      <div className="border-b border-surface-container-high pb-4">
-        <h2 className="font-headline-lg font-bold text-on-surface">
-          Báo Cáo Thống Kê & Phân Tích Cơ Sở
-        </h2>
-        <p className="text-xs text-on-surface-variant">
-          Dữ liệu trực quan hóa về dân cư, tình hình thu chi ngân sách và các chính sách an sinh xã hội
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-surface-container-high pb-4">
+        <div>
+          <h2 className="font-headline-lg font-bold text-on-surface">
+            Báo Cáo Thống Kê & Phân Tích Cơ Sở
+          </h2>
+          <p className="text-xs text-on-surface-variant">
+            Dữ liệu trực quan hóa về dân cư, tình hình thu chi ngân sách và các chính sách an sinh xã hội
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => setIsExportModalOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-semibold border border-surface-container-highest transition-colors shadow-2xs"
+            title="Tùy chọn xuất từng loại báo cáo theo yêu cầu"
+          >
+            <span className="material-symbols-outlined text-base text-primary">tune</span>
+            <span>Tùy Chọn Báo Cáo...</span>
+          </button>
+
+          <button
+            onClick={handleQuickExportAll}
+            disabled={quickExporting}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold transition-all shadow-xs active:scale-98 disabled:opacity-50"
+            title="Xuất ngay toàn bộ các phân hệ từ trước đến nay ra 1 file Excel đa sheet"
+          >
+            <span className="material-symbols-outlined text-base">download</span>
+            <span>{quickExporting ? 'Đang xuất Excel...' : '⚡ Xuất Báo Cáo Tổng Hợp'}</span>
+          </button>
+        </div>
       </div>
+
+      {/* Success banner */}
+      {exportSuccessMsg && (
+        <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-semibold flex items-center justify-between gap-2 shadow-xs">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-base text-emerald-700">check_circle</span>
+            <span>{exportSuccessMsg}</span>
+          </div>
+          <button
+            onClick={() => setExportSuccessMsg(null)}
+            className="text-emerald-700 hover:text-emerald-900"
+          >
+            <span className="material-symbols-outlined text-base">close</span>
+          </button>
+        </div>
+      )}
 
       {/* Overview Metric Banner */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -435,6 +512,18 @@ export function ReportsView() {
           </table>
         </div>
       </div>
+
+      {/* Modal Xuất Báo Cáo */}
+      <ReportExportModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        residents={residents}
+        households={households}
+        transactions={transactions}
+        categories={categories}
+        campaigns={campaigns}
+        settings={settings}
+      />
     </div>
   );
 }

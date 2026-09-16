@@ -10,12 +10,13 @@ interface HouseholdDetailModalProps {
   residents: Resident[];
   hamletName?: string;
   onRefresh: () => Promise<void>;
-  onEditHousehold: (household: Household) => void;
-  onEditResident: (resident: Resident) => void;
-  onAddNewMember: (household: Household) => void;
-  hasPerm: (perm: PermissionAction) => boolean;
-  user: { uid: string } | null;
-  userProfile: UserProfile | null;
+  onEditHousehold?: (household: Household) => void;
+  onEditResident?: (resident: Resident) => void;
+  onAddNewMember?: (household: Household) => void;
+  onAddNewResident?: (household: Household) => void;
+  hasPerm?: (perm: PermissionAction) => boolean;
+  user?: { uid: string } | null;
+  userProfile?: UserProfile | null;
 }
 
 export default function HouseholdDetailModal({
@@ -28,10 +29,12 @@ export default function HouseholdDetailModal({
   onEditHousehold,
   onEditResident,
   onAddNewMember,
-  hasPerm,
+  onAddNewResident,
+  hasPerm = () => true,
   user,
   userProfile,
 }: HouseholdDetailModalProps) {
+  const handleAddNewMemberClick = onAddNewMember || onAddNewResident;
   const [printMode, setPrintMode] = useState(false);
   const [showAddExisting, setShowAddExisting] = useState(false);
   const [selectedExistingResId, setSelectedExistingResId] = useState('');
@@ -536,7 +539,7 @@ export default function HouseholdDetailModal({
                   </button>
 
                   <button
-                    onClick={() => onAddNewMember(household)}
+                    onClick={() => handleAddNewMemberClick?.(household)}
                     className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold bg-primary hover:bg-primary-container text-white shadow-xs transition-all"
                   >
                     <span className="material-symbols-outlined text-base">add</span>
@@ -639,7 +642,7 @@ export default function HouseholdDetailModal({
                             <span className="material-symbols-outlined text-3xl text-slate-400">group_off</span>
                             <span>Sổ hộ này chưa có nhân khẩu nào được liên kết.</span>
                             <button
-                              onClick={() => onAddNewMember(household)}
+                              onClick={() => handleAddNewMemberClick?.(household)}
                               className="mt-2 text-xs font-bold text-primary hover:underline"
                             >
                               + Đăng ký nhân khẩu đầu tiên cho hộ
@@ -732,7 +735,7 @@ export default function HouseholdDetailModal({
                               <div className="flex items-center justify-end gap-1">
                                 {hasPerm('residents.update') && (
                                   <button
-                                    onClick={() => onEditResident(m)}
+                                    onClick={() => onEditResident?.(m)}
                                     className="p-1 rounded-lg hover:bg-surface-container text-slate-600 hover:text-primary transition-colors"
                                     title="Chỉnh sửa thông tin thành viên"
                                   >

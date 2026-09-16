@@ -1677,6 +1677,12 @@ export function ResidentsView({ initialOpenModal, onResetInitialModal }: Residen
           setIsHouseholdDetailOpen(false);
           handleAddNewMemberFromHousehold(hh);
         }}
+        onEditHousehold={openEditHouseholdModal}
+        onEditResident={openEditResidentModal}
+        hasPerm={hasPerm}
+        user={user}
+        userProfile={userProfile}
+        hamletName={settings.hamletName}
       />
 
       {/* Delete Household Confirmation Modal */}

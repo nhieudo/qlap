@@ -5,6 +5,7 @@ import {
   getAuditLogs,
   getAllUsers,
   updateUserProfileRole,
+  deleteOfficialUser,
   backupDatabaseToJson,
   restoreDatabaseFromJson,
   getFinanceCategories,
@@ -19,6 +20,9 @@ import { AuditLog, UserProfile, FinanceCategory, UserInvitation } from '../types
 import { formatDateVN } from '../utils/numberToWords';
 import { DEFAULT_ROLES, GRASSROOTS_POSITIONS, getDefaultRoleIdForPosition } from '../utils/rbac';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { EditOfficialModal } from '../components/EditOfficialModal';
+import { OfficialDetailModal } from '../components/OfficialDetailModal';
+import { PWAInstallButton } from '../components/PWAInstallButton';
 
 interface SettingsViewProps {
   initialTab?: 'info' | 'users' | 'categories' | 'backup' | 'audit' | 'profile';
@@ -70,6 +74,13 @@ export function SettingsView({ initialTab }: SettingsViewProps = {}) {
   const [creatingInvite, setCreatingInvite] = useState(false);
   const [createdInviteLink, setCreatedInviteLink] = useState<string | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
+
+  // Edit & Delete Official states
+  const [isEditOfficialModalOpen, setIsEditOfficialModalOpen] = useState(false);
+  const [selectedOfficialForEdit, setSelectedOfficialForEdit] = useState<UserProfile | null>(null);
+  const [selectedOfficialForDetail, setSelectedOfficialForDetail] = useState<UserProfile | null>(null);
+  const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
+  const [deletingUser, setDeletingUser] = useState(false);
 
   // Categories Management
   const [categories, setCategories] = useState<FinanceCategory[]>([]);
@@ -292,6 +303,26 @@ export function SettingsView({ initialTab }: SettingsViewProps = {}) {
     } catch (err: unknown) {
       const error = err as Error;
       alert(error.message);
+    }
+  };
+
+  // Delete official from executive list
+  const handleDeleteOfficial = async () => {
+    if (!userToDelete) return;
+    setDeletingUser(true);
+    try {
+      await deleteOfficialUser(
+        userToDelete.uid || userToDelete.id || '',
+        user?.uid || 'user',
+        userProfile?.fullName || 'Admin'
+      );
+      setUserToDelete(null);
+      await loadUsersAndInvites();
+    } catch (err: unknown) {
+      const error = err as Error;
+      alert(error.message || 'Lỗi khi xóa cán bộ khỏi hệ thống.');
+    } finally {
+      setDeletingUser(false);
     }
   };
 
@@ -862,6 +893,9 @@ export function SettingsView({ initialTab }: SettingsViewProps = {}) {
               )}
             </div>
           </div>
+
+          {/* PWA Mobile & Desktop Install Section */}
+          <PWAInstallButton variant="card" />
         </div>
       )}
 
@@ -1067,73 +1101,159 @@ export function SettingsView({ initialTab }: SettingsViewProps = {}) {
                   Danh sách Cán bộ Điều hành Ấp
                 </h3>
                 <p className="text-xs text-on-surface-variant">
-                  Chỉ Quản trị viên (Bí thư chi bộ, Trưởng ấp, Trưởng ban CTMT) mới có quyền phân quyền
+                  Quản trị viên có quyền thêm, chỉnh sửa thông tin, phân quyền hoặc xóa cán bộ khỏi danh sách
                 </p>
               </div>
 
-              <button
-                onClick={() => {
-                  setIsInviteModalOpen(true);
-                  setCreatedInviteLink(null);
-                  setInviteEmail('');
-                  setInviteName('');
-                }}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-container transition-all shadow-xs shrink-0 cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-base">forward_to_inbox</span>
-                <span>Mời Cán Bộ Qua Email</span>
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => {
+                    setSelectedOfficialForEdit(null);
+                    setIsEditOfficialModalOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-container transition-all shadow-xs shrink-0 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-base">person_add</span>
+                  <span>Thêm Cán Bộ</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setIsInviteModalOpen(true);
+                    setCreatedInviteLink(null);
+                    setInviteEmail('');
+                    setInviteName('');
+                  }}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-surface-container-high hover:bg-surface-container-highest text-on-surface text-xs font-bold transition-all shadow-xs shrink-0 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-base">forward_to_inbox</span>
+                  <span>Mời Qua Email</span>
+                </button>
+              </div>
             </div>
 
             <div className="divide-y divide-surface-container-high">
-              {users.map((u) => (
-                <div key={u.id} className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <div className="font-bold text-sm text-on-surface">{u.fullName || 'Chưa đặt tên'}</div>
-                      {u.position && (
-                        <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 font-bold text-[11px]">
-                          {u.position}
+              {users.map((u) => {
+                const isCurrentSelf = u.id === user?.uid || u.uid === user?.uid;
+                return (
+                  <div
+                    key={u.uid || u.id}
+                    className="py-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedOfficialForDetail(u)}
+                          className="font-bold text-sm text-on-surface hover:text-primary transition-colors text-left cursor-pointer flex items-center gap-1.5 group"
+                          title="Bấm vào tên để xem thông tin chi tiết (địa chỉ, số điện thoại, ngày tham gia...)"
+                        >
+                          <span className="group-hover:underline">{u.fullName || 'Chưa đặt tên'}</span>
+                          <span className="material-symbols-outlined text-sm text-primary/70 group-hover:text-primary transition-transform group-hover:scale-110">
+                            info
+                          </span>
+                        </button>
+                        {u.position && (
+                          <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 font-bold text-[11px]">
+                            {u.position}
+                          </span>
+                        )}
+                        <span
+                          className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                            u.status === 'disabled' || (u as any).isActive === false
+                              ? 'bg-red-100 text-red-800 border border-red-200'
+                              : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          }`}
+                        >
+                          {u.status === 'disabled' || (u as any).isActive === false
+                            ? 'Tạm khóa'
+                            : 'Đang hoạt động'}
                         </span>
+                        {isCurrentSelf && (
+                          <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary font-bold text-[10px]">
+                            (Bạn)
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-slate-500 font-mono text-[11px]">
+                        <span>{u.email}</span>
+                        {u.phone && (
+                          <span className="flex items-center gap-0.5 text-slate-600 font-sans">
+                            <span className="material-symbols-outlined text-xs">call</span>
+                            <span>{u.phone}</span>
+                          </span>
+                        )}
+                        {u.address && (
+                          <span className="flex items-center gap-0.5 text-slate-600 font-sans">
+                            <span className="material-symbols-outlined text-xs">home_pin</span>
+                            <span>{u.address}</span>
+                          </span>
+                        )}
+                      </div>
+                      {u.notes && (
+                        <p className="text-[11px] text-slate-500 italic">
+                          Ghi chú: {u.notes}
+                        </p>
                       )}
+                      <div className="text-slate-400 text-[10px]">
+                        Đăng nhập lần cuối: {u.lastLoginAt ? formatDateVN(u.lastLoginAt) : 'Chưa có'}
+                      </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-slate-500 font-mono text-[11px]">
-                      <span>{u.email}</span>
-                      {u.phone && (
-                        <span className="flex items-center gap-0.5 text-slate-600 font-sans">
-                          <span className="material-symbols-outlined text-xs">call</span>
-                          <span>{u.phone}</span>
-                        </span>
-                      )}
-                      {u.address && (
-                        <span className="flex items-center gap-0.5 text-slate-600 font-sans">
-                          <span className="material-symbols-outlined text-xs">home_pin</span>
-                          <span>{u.address}</span>
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-slate-400 text-[10px]">
-                      Đăng nhập lần cuối: {u.lastLoginAt ? formatDateVN(u.lastLoginAt) : 'Chưa có'}
-                    </div>
-                  </div>
 
-                  <div className="flex items-center gap-3">
-                    <span className="font-semibold text-slate-700">Vai trò:</span>
-                    <select
-                      value={u.roleId}
-                      onChange={(e) => handleRoleChange(u.id, e.target.value)}
-                      disabled={u.id === user?.uid}
-                      className="px-3 py-1.5 rounded-xl border border-surface-container-highest bg-surface text-xs font-bold text-primary"
-                    >
-                      {DEFAULT_ROLES.map((r) => (
-                        <option key={r.id} value={r.id}>
-                          {r.name}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-3 shrink-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-semibold text-slate-700">Vai trò:</span>
+                        <select
+                          value={u.roleId}
+                          onChange={(e) => handleRoleChange(u.uid || u.id, e.target.value)}
+                          disabled={isCurrentSelf}
+                          className="px-2.5 py-1.5 rounded-xl border border-surface-container-highest bg-surface text-xs font-bold text-primary disabled:opacity-60 cursor-pointer"
+                        >
+                          {DEFAULT_ROLES.map((r) => (
+                            <option key={r.id} value={r.id}>
+                              {r.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setSelectedOfficialForDetail(u)}
+                          title="Xem thông tin chi tiết cán bộ"
+                          className="p-1.5 rounded-xl hover:bg-surface-container-highest text-slate-600 hover:text-primary transition-colors cursor-pointer flex items-center justify-center"
+                        >
+                          <span className="material-symbols-outlined text-lg">visibility</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setSelectedOfficialForEdit(u);
+                            setIsEditOfficialModalOpen(true);
+                          }}
+                          title="Chỉnh sửa thông tin cán bộ"
+                          className="p-1.5 rounded-xl hover:bg-primary/10 text-primary transition-colors cursor-pointer flex items-center justify-center"
+                        >
+                          <span className="material-symbols-outlined text-lg">edit</span>
+                        </button>
+
+                        <button
+                          onClick={() => setUserToDelete(u)}
+                          disabled={isCurrentSelf}
+                          title={
+                            isCurrentSelf
+                              ? 'Không thể tự xóa tài khoản của chính mình'
+                              : 'Xóa cán bộ khỏi danh sách điều hành ấp'
+                          }
+                          className="p-1.5 rounded-xl hover:bg-red-50 text-red-600 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center"
+                        >
+                          <span className="material-symbols-outlined text-lg">delete</span>
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -1321,6 +1441,9 @@ export function SettingsView({ initialTab }: SettingsViewProps = {}) {
       {/* TAB 4: SAO LƯU & PHỤC HỒI & DỮ LIỆU MẪU (ADMIN ONLY) */}
       {activeTab === 'backup' && isAdmin && (
         <div className="space-y-6">
+          {/* PWA Mobile & Desktop Setup Section */}
+          <PWAInstallButton variant="card" />
+
           <div className="bg-surface-container-lowest rounded-3xl border border-surface-container-high p-6 space-y-4 shadow-xs">
             <h3 className="font-headline-sm font-bold text-on-surface">
               Sao lưu Dữ liệu Toàn diện (Backup JSON)
@@ -1670,6 +1793,62 @@ export function SettingsView({ initialTab }: SettingsViewProps = {}) {
         confirmText={seeding ? 'Đang nạp dữ liệu...' : 'Nạp dữ liệu ngay'}
         onConfirm={handleSeedData}
         onCancel={() => setIsSeedModalOpen(false)}
+      />
+
+      {/* Confirm Delete Official Modal */}
+      <ConfirmModal
+        isOpen={Boolean(userToDelete)}
+        title="Xác nhận xóa cán bộ"
+        isDangerous={true}
+        description={
+          userToDelete ? (
+            <div className="space-y-2 text-xs">
+              <p>
+                Bạn có chắc chắn muốn xóa cán bộ <strong>{userToDelete.fullName}</strong>{' '}
+                ({userToDelete.email}) khỏi danh sách Ban điều hành ấp?
+              </p>
+              {userToDelete.position && (
+                <p className="text-amber-800 bg-amber-50 p-2 rounded-lg border border-amber-200">
+                  <strong>Chức vụ hiện tại:</strong> {userToDelete.position}
+                </p>
+              )}
+              <p className="text-red-600">
+                Thao tác này sẽ xóa hồ sơ cán bộ và thu hồi toàn bộ quyền quản trị của tài khoản này trên hệ thống.
+              </p>
+            </div>
+          ) : (
+            ''
+          )
+        }
+        confirmText={deletingUser ? 'Đang xóa...' : 'Xóa Cán Bộ'}
+        cancelText="Hủy bỏ"
+        onConfirm={handleDeleteOfficial}
+        onCancel={() => setUserToDelete(null)}
+      />
+
+      {/* Edit / Add Official Modal */}
+      <EditOfficialModal
+        isOpen={isEditOfficialModalOpen}
+        onClose={() => {
+          setIsEditOfficialModalOpen(false);
+          setSelectedOfficialForEdit(null);
+        }}
+        official={selectedOfficialForEdit}
+        currentUserId={user?.uid || 'user'}
+        currentUserName={userProfile?.fullName || 'Admin'}
+        onSuccess={loadUsersAndInvites}
+      />
+
+      {/* Official Detail Modal */}
+      <OfficialDetailModal
+        isOpen={Boolean(selectedOfficialForDetail)}
+        onClose={() => setSelectedOfficialForDetail(null)}
+        official={selectedOfficialForDetail}
+        onEdit={(off) => {
+          setSelectedOfficialForEdit(off);
+          setIsEditOfficialModalOpen(true);
+        }}
+        canEdit={true}
       />
     </div>
   );

@@ -1,6 +1,7 @@
 import { useState, FormEvent } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
+import { PWAInstallButton } from '../components/PWAInstallButton';
 
 interface LoginViewProps {
   onSuccess?: () => void;
@@ -221,6 +222,11 @@ export function LoginView({ onSuccess }: LoginViewProps) {
             </button>
           </div>
         )}
+      </div>
+
+      {/* PWA Install Card for quick mobile install */}
+      <div className="w-full max-w-md mt-4">
+        <PWAInstallButton variant="card" />
       </div>
     </div>
   );

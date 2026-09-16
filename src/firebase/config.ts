@@ -1,16 +1,36 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import {
+  initializeFirestore,
+  getFirestore,
+  doc,
+  getDoc,
+  type Firestore,
+} from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
 export const auth = getAuth(app);
 
-// Initialize Firestore with custom databaseId if configured
-export const db = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)'
-  ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
-  : getFirestore(app);
+// Determine database ID
+const targetDbId =
+  firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)'
+    ? firebaseConfig.firestoreDatabaseId
+    : undefined;
+
+// Initialize Firestore with auto-detect long-polling for high stability in iframes & sandboxed environments
+let firestoreInstance: Firestore;
+try {
+  firestoreInstance = targetDbId
+    ? initializeFirestore(app, { experimentalAutoDetectLongPolling: true }, targetDbId)
+    : initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
+} catch {
+  // If already initialized, retrieve the existing instance
+  firestoreInstance = targetDbId ? getFirestore(app, targetDbId) : getFirestore(app);
+}
+
+export const db = firestoreInstance;
 
 export const databaseId = firebaseConfig.firestoreDatabaseId || '(default)';
 
@@ -19,13 +39,13 @@ googleProvider.setCustomParameters({
   prompt: 'select_account',
 });
 
-// Validate connection to Firestore on initialization
+// Non-blocking connection probe to warm up connection without throwing unhandled server errors
 async function testConnection() {
   try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
+    await getDoc(doc(db, 'test', 'connection'));
   } catch (error) {
     if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error('Please check your Firebase configuration.');
+      console.warn('Firestore đang hoạt động ở chế độ ngoại tuyến (offline cache).');
     }
   }
 }

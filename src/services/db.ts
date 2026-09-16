@@ -1783,7 +1783,11 @@ export async function updateUserStatus(
   currentUserName: string
 ): Promise<void> {
   const uRef = doc(db, 'users', userId);
-  await updateDoc(uRef, { isActive, updatedAt: new Date().toISOString() });
+  await updateDoc(uRef, {
+    status: isActive ? 'active' : 'disabled',
+    isActive,
+    updatedAt: new Date().toISOString(),
+  });
   await logAuditEvent({
     userId: currentUserId,
     userName: currentUserName,
@@ -1792,6 +1796,221 @@ export async function updateUserStatus(
     entityType: 'USER',
     entityId: userId,
     description: `${isActive ? 'Kích hoạt' : 'Khóa'} tài khoản cán bộ`,
+  });
+}
+
+/**
+ * Thêm mới cán bộ điều hành ấp trực tiếp vào hệ thống
+ */
+export async function createOfficialUser(
+  data: {
+    fullName: string;
+    email: string;
+    phone?: string;
+    address?: string;
+    position?: string;
+    roleId: string;
+    status?: 'ACTIVE' | 'DISABLED' | 'active' | 'disabled';
+    notes?: string;
+    syncToSettings?: boolean;
+  },
+  currentUserId: string,
+  currentUserName: string
+): Promise<UserProfile> {
+  if (!data.fullName.trim()) throw new Error('Vui lòng nhập họ và tên cán bộ.');
+  if (!data.email.trim()) throw new Error('Vui lòng nhập địa chỉ email cán bộ.');
+
+  const cleanEmail = data.email.trim().toLowerCase();
+
+  // Kiểm tra trùng email
+  const emailQuery = query(collection(db, 'users'), where('email', '==', cleanEmail));
+  const existingUsers = await getDocs(emailQuery);
+  if (!existingUsers.empty) {
+    throw new Error(`Email "${cleanEmail}" đã tồn tại trong danh sách cán bộ.`);
+  }
+
+  const newUid = doc(collection(db, 'users')).id;
+  const now = new Date().toISOString();
+  const profile: UserProfile = {
+    uid: newUid,
+    fullName: data.fullName.trim(),
+    email: cleanEmail,
+    phone: data.phone?.trim() || '',
+    address: data.address?.trim() || '',
+    position: data.position?.trim() || '',
+    roleId: data.roleId || 'SECRETARY',
+    status: data.status || 'active',
+    createdAt: now,
+    createdBy: currentUserName,
+    updatedAt: now,
+    updatedBy: currentUserName,
+    notes: data.notes?.trim() || '',
+  };
+
+  await setDoc(doc(db, 'users', newUid), sanitizeForFirestore(profile));
+
+  // Tự động đồng bộ chức danh chủ chốt vào cấu hình chữ ký nếu được yêu cầu
+  if (data.syncToSettings && data.position) {
+    try {
+      const posLower = data.position.toLowerCase();
+      const settingsRef = doc(db, 'organizationSettings', 'default');
+      const settingsSnap = await getDoc(settingsRef);
+      if (settingsSnap.exists()) {
+        const updateSettings: Record<string, unknown> = {
+          updatedAt: now,
+          updatedBy: currentUserName,
+        };
+        if (posLower.includes('trưởng ấp') || posLower.includes('trưởng thôn')) {
+          updateSettings.hamletLeaderName = profile.fullName;
+        } else if (posLower.includes('kế toán') || posLower.includes('thư ký')) {
+          updateSettings.financeOfficerName = profile.fullName;
+        } else if (posLower.includes('thủ quỹ')) {
+          updateSettings.treasurerName = profile.fullName;
+        }
+        if (Object.keys(updateSettings).length > 2) {
+          await updateDoc(settingsRef, sanitizeForFirestore(updateSettings));
+        }
+      }
+    } catch (sErr) {
+      console.warn('Lỗi đồng bộ chức danh cán bộ mới sang cấu hình đơn vị:', sErr);
+    }
+  }
+
+  await logAuditEvent({
+    userId: currentUserId,
+    userName: currentUserName,
+    action: 'CREATE',
+    module: 'USERS',
+    entityType: 'USER_PROFILE',
+    entityId: newUid,
+    description: `Thêm cán bộ mới vào danh sách điều hành ấp: ${profile.fullName} (${profile.email}), Chức vụ: "${profile.position || 'Cán bộ'}", Vai trò: ${profile.roleId}`,
+    after: profile,
+  });
+
+  return profile;
+}
+
+/**
+ * Chỉnh sửa thông tin thành viên / cán bộ trong danh sách điều hành ấp
+ */
+export async function updateOfficialUser(
+  userId: string,
+  updates: {
+    fullName: string;
+    email?: string;
+    phone?: string;
+    address?: string;
+    position?: string;
+    roleId?: string;
+    status?: 'ACTIVE' | 'DISABLED' | 'active' | 'disabled';
+    notes?: string;
+    syncToSettings?: boolean;
+  },
+  currentUserId: string,
+  currentUserName: string
+): Promise<void> {
+  const uRef = doc(db, 'users', userId);
+  const snap = await getDoc(uRef);
+  if (!snap.exists()) throw new Error('Không tìm thấy thông tin cán bộ trong hệ thống.');
+  const before = snap.data() as UserProfile;
+
+  // Kiểm tra trùng email nếu email thay đổi
+  if (updates.email && updates.email.trim().toLowerCase() !== (before.email || '').toLowerCase()) {
+    const cleanEmail = updates.email.trim().toLowerCase();
+    const emailQuery = query(collection(db, 'users'), where('email', '==', cleanEmail));
+    const existingUsers = await getDocs(emailQuery);
+    if (!existingUsers.empty && existingUsers.docs[0].id !== userId) {
+      throw new Error(`Email "${cleanEmail}" đã được sử dụng bởi một cán bộ khác.`);
+    }
+  }
+
+  const now = new Date().toISOString();
+  const payload: Record<string, unknown> = {
+    fullName: updates.fullName.trim(),
+    updatedAt: now,
+    updatedBy: currentUserName,
+  };
+
+  if (updates.email !== undefined) payload.email = updates.email.trim().toLowerCase();
+  if (updates.phone !== undefined) payload.phone = updates.phone.trim();
+  if (updates.address !== undefined) payload.address = updates.address.trim();
+  if (updates.position !== undefined) payload.position = updates.position.trim();
+  if (updates.roleId !== undefined) payload.roleId = updates.roleId;
+  if (updates.status !== undefined) payload.status = updates.status;
+  if (updates.notes !== undefined) payload.notes = updates.notes.trim();
+
+  await updateDoc(uRef, sanitizeForFirestore(payload));
+
+  // Tự động đồng bộ chức danh chủ chốt vào cấu hình chữ ký nếu được yêu cầu
+  if (updates.syncToSettings && updates.position) {
+    try {
+      const posLower = updates.position.toLowerCase();
+      const settingsRef = doc(db, 'organizationSettings', 'default');
+      const settingsSnap = await getDoc(settingsRef);
+      if (settingsSnap.exists()) {
+        const updateSettings: Record<string, unknown> = {
+          updatedAt: now,
+          updatedBy: currentUserName,
+        };
+        if (posLower.includes('trưởng ấp') || posLower.includes('trưởng thôn')) {
+          updateSettings.hamletLeaderName = updates.fullName.trim();
+        } else if (posLower.includes('kế toán') || posLower.includes('thư ký')) {
+          updateSettings.financeOfficerName = updates.fullName.trim();
+        } else if (posLower.includes('thủ quỹ')) {
+          updateSettings.treasurerName = updates.fullName.trim();
+        }
+        if (Object.keys(updateSettings).length > 2) {
+          await updateDoc(settingsRef, sanitizeForFirestore(updateSettings));
+        }
+      }
+    } catch (sErr) {
+      console.warn('Lỗi đồng bộ chức danh sang cấu hình đơn vị:', sErr);
+    }
+  }
+
+  await logAuditEvent({
+    userId: currentUserId,
+    userName: currentUserName,
+    action: 'UPDATE',
+    module: 'USERS',
+    entityType: 'USER_PROFILE',
+    entityId: userId,
+    description: `Cập nhật thông tin cán bộ điều hành ấp: ${updates.fullName} (Chức vụ: "${updates.position || before.position || ''}", Vai trò: ${updates.roleId || before.roleId})`,
+    before,
+    after: { ...before, ...payload },
+  });
+}
+
+/**
+ * Xóa thành viên khỏi danh sách cán bộ điều hành ấp
+ */
+export async function deleteOfficialUser(
+  userId: string,
+  currentUserId: string,
+  currentUserName: string
+): Promise<void> {
+  if (userId === currentUserId) {
+    throw new Error('Bạn không thể tự xóa tài khoản của chính mình khỏi danh sách cán bộ điều hành.');
+  }
+
+  const uRef = doc(db, 'users', userId);
+  const snap = await getDoc(uRef);
+  if (!snap.exists()) {
+    throw new Error('Không tìm thấy cán bộ cần xóa hoặc đã bị xóa trước đó.');
+  }
+  const before = snap.data() as UserProfile;
+
+  await deleteDoc(uRef);
+
+  await logAuditEvent({
+    userId: currentUserId,
+    userName: currentUserName,
+    action: 'DELETE',
+    module: 'USERS',
+    entityType: 'USER_PROFILE',
+    entityId: userId,
+    description: `Xóa thành viên khỏi danh sách cán bộ điều hành ấp: ${before.fullName} (${before.email}, Chức vụ: "${before.position || 'Cán bộ'}", Vai trò: ${before.roleId})`,
+    before,
   });
 }
 
@@ -1817,11 +2036,70 @@ export async function createFinanceCategory(
       module: 'FINANCE',
       entityType: 'FINANCE_CATEGORY',
       entityId: newId,
-      description: `Tạo danh mục tài chính mới: ${newCat.name}`,
+      description: `Tạo danh mục tài chính mới: ${newCat.name} (${newCat.type === 'INCOME' ? 'Thu' : 'Chi'})`,
     });
   }
 
   return newCat;
+}
+
+export async function updateFinanceCategory(
+  catId: string,
+  updates: Partial<FinanceCategory>,
+  currentUserId?: string,
+  currentUserName?: string
+): Promise<void> {
+  const catRef = doc(db, 'financeCategories', catId);
+  const catSnap = await getDoc(catRef);
+  if (!catSnap.exists()) {
+    throw new Error('Danh mục thu/chi không tồn tại.');
+  }
+  const before = catSnap.data() as FinanceCategory;
+
+  const cleaned = sanitizeForFirestore({
+    ...updates,
+    updatedAt: new Date().toISOString(),
+  });
+
+  await updateDoc(catRef, cleaned);
+
+  if (currentUserId && currentUserName) {
+    await logAuditEvent({
+      userId: currentUserId,
+      userName: currentUserName,
+      action: 'UPDATE',
+      module: 'FINANCE',
+      entityType: 'FINANCE_CATEGORY',
+      entityId: catId,
+      description: `Cập nhật danh mục thu/chi: ${before.name}`,
+      before,
+      after: { ...before, ...cleaned },
+    });
+  }
+}
+
+/**
+ * Đếm số lượng chứng từ thu/chi đang sử dụng từng danh mục
+ */
+export async function getCategoryUsageCounts(): Promise<Record<string, number>> {
+  try {
+    const snap = await getDocs(collection(db, 'financeTransactions'));
+    const counts: Record<string, number> = {};
+    snap.docs.forEach((d) => {
+      const tx = d.data() as FinanceTransaction;
+      if (tx.categoryId) {
+        counts[tx.categoryId] = (counts[tx.categoryId] || 0) + 1;
+      }
+      if (tx.categoryName) {
+        counts[`name:${tx.categoryName.trim()}`] =
+          (counts[`name:${tx.categoryName.trim()}`] || 0) + 1;
+      }
+    });
+    return counts;
+  } catch (err) {
+    console.warn('Lỗi đếm số lượng chứng từ theo danh mục:', err);
+    return {};
+  }
 }
 
 export async function deleteFinanceCategory(
@@ -1829,7 +2107,39 @@ export async function deleteFinanceCategory(
   currentUserId?: string,
   currentUserName?: string
 ): Promise<void> {
-  await deleteDoc(doc(db, 'financeCategories', catId));
+  // 1. Kiểm tra danh mục tồn tại
+  const catRef = doc(db, 'financeCategories', catId);
+  const catSnap = await getDoc(catRef);
+  if (!catSnap.exists()) {
+    throw new Error('Danh mục thu/chi không tồn tại hoặc đã bị xóa.');
+  }
+  const catData = catSnap.data() as FinanceCategory;
+
+  // 2. KIỂM TRA BẮT BUỘC: Không cho phép người dùng xóa danh mục khi có dữ liệu bên trong
+  const qTxById = query(
+    collection(db, 'financeTransactions'),
+    where('categoryId', '==', catId)
+  );
+  const snapById = await getDocs(qTxById);
+  let txCount = snapById.size;
+
+  if (txCount === 0 && catData.name) {
+    const qTxByName = query(
+      collection(db, 'financeTransactions'),
+      where('categoryName', '==', catData.name.trim())
+    );
+    const snapByName = await getDocs(qTxByName);
+    txCount = snapByName.size;
+  }
+
+  if (txCount > 0) {
+    throw new Error(
+      `Không thể xóa danh mục "${catData.name}" vì hiện đang có ${txCount} chứng từ thu/chi sử dụng danh mục này. Hệ thống không cho phép xóa danh mục khi đã phát sinh dữ liệu!`
+    );
+  }
+
+  // 3. Thực hiện xóa danh mục nếu không có dữ liệu
+  await deleteDoc(catRef);
 
   if (currentUserId && currentUserName) {
     await logAuditEvent({
@@ -1839,7 +2149,8 @@ export async function deleteFinanceCategory(
       module: 'FINANCE',
       entityType: 'FINANCE_CATEGORY',
       entityId: catId,
-      description: `Xóa danh mục thu chi: ${catId}`,
+      description: `Xóa danh mục thu chi: ${catData.name}`,
+      before: catData,
     });
   }
 }

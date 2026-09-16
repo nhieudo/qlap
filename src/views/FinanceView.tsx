@@ -4,6 +4,7 @@ import { useSettings } from '../context/SettingsContext';
 import {
   getFinanceTransactions,
   getFinanceCategories,
+  getCategoryUsageCounts,
   createFinanceTransaction,
   updateFinanceTransaction,
   approveFinanceTransaction,
@@ -15,6 +16,7 @@ import { exportFinanceToExcel } from '../utils/excelExport';
 import { VoucherA4Modal } from '../components/VoucherA4Modal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ReconciliationModal } from '../components/ReconciliationModal';
+import FinanceCategoryManagerModal from '../components/FinanceCategoryManagerModal';
 
 interface FinanceViewProps {
   initialOpenIncome?: boolean;
@@ -45,6 +47,10 @@ export function FinanceView({
   // Reconciliation Modal
   const [isReconModalOpen, setIsReconModalOpen] = useState(false);
 
+  // Category Manager Modal
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [categoryUsageCounts, setCategoryUsageCounts] = useState<{ [key: string]: number }>({});
+
   // Create / Edit Voucher Modal
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<FinanceTransaction | null>(null);
@@ -64,15 +70,36 @@ export function FinanceView({
   const [cancelTarget, setCancelTarget] = useState<FinanceTransaction | null>(null);
   const [cancelReason, setCancelReason] = useState('');
 
+  // Category RBAC helpers
+  const canViewCategory = (c: FinanceCategory) => {
+    if (!userProfile) return true;
+    if (userProfile.roleId === 'ADMIN' || userProfile.roleId === 'PARTY_SECRETARY' || userProfile.roleId === 'HAMLET_LEADER') return true;
+    if (!c.viewRoles || c.viewRoles.length === 0) return true;
+    return c.viewRoles.includes(userProfile.roleId);
+  };
+
+  const canUseCategory = (c: FinanceCategory) => {
+    if (!userProfile) return true;
+    if (userProfile.roleId === 'ADMIN' || userProfile.roleId === 'PARTY_SECRETARY' || userProfile.roleId === 'HAMLET_LEADER') return true;
+    if (!c.editRoles || c.editRoles.length === 0) return true;
+    return c.editRoles.includes(userProfile.roleId);
+  };
+
+  const visibleCategories = useMemo(() => {
+    return categories.filter(canViewCategory);
+  }, [categories, userProfile]);
+
   const loadData = async () => {
     setLoading(true);
     try {
-      const [txList, catList] = await Promise.all([
+      const [txList, catList, counts] = await Promise.all([
         getFinanceTransactions(),
         getFinanceCategories(),
+        getCategoryUsageCounts(),
       ]);
       setTransactions(txList);
       setCategories(catList);
+      setCategoryUsageCounts(counts);
       if (catList.length > 0 && !categoryId) {
         setCategoryId(catList[0].id);
       }
@@ -288,103 +315,123 @@ export function FinanceView({
   }, [transactions, activeFilter, selectedCategory, search]);
 
   return (
-    <div className="space-y-6 pb-20">
+    <div className="space-y-6 pb-20 min-w-0 max-w-full">
       {/* Top Header and Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-surface-container-high pb-4">
-        <div>
-          <h2 className="font-headline-lg font-bold text-on-surface">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-surface-container-high pb-4 min-w-0">
+        <div className="min-w-0">
+          <h2 className="font-headline-lg font-bold text-on-surface text-lg sm:text-xl md:text-2xl tracking-tight">
             Sổ Quỹ Tiền Mặt & Quản Lý Chứng Từ
           </h2>
-          <p className="text-xs text-on-surface-variant">
+          <p className="text-xs text-on-surface-variant mt-0.5">
             Theo dõi dòng tiền thu chi, đối soát mã hóa và in phiếu chuẩn Mẫu C40-BB
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setIsReconModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-semibold border border-surface-container-highest transition-colors"
-            title="Đối chiếu mã chứng từ và kiểm tra tính hợp lệ"
-          >
-            <span className="material-symbols-outlined text-base text-primary">fact_check</span>
-            <span>Đối Chiếu Mã</span>
-          </button>
-          {hasPerm('finance.export') && (
+        {/* Action Buttons Cluster */}
+        <div className="flex flex-wrap items-center gap-2 max-w-full">
+          {/* Secondary Utilities */}
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
             <button
-              onClick={() => exportFinanceToExcel(filteredTransactions)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-semibold border border-surface-container-highest transition-colors"
+              type="button"
+              onClick={() => setIsCategoryModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-semibold border border-surface-container-highest transition-colors shadow-2xs whitespace-nowrap cursor-pointer"
+              title="Quản lý danh mục thu/chi và phân quyền xem/chỉnh sửa/xóa"
             >
-              <span className="material-symbols-outlined text-base text-emerald-700">file_download</span>
-              <span>Xuất Sổ Quỹ (.xlsx)</span>
+              <span className="material-symbols-outlined text-base text-primary">category</span>
+              <span>Danh Mục Quỹ</span>
             </button>
-          )}
-          {hasPerm('finance.create') && (
-            <>
+            <button
+              type="button"
+              onClick={() => setIsReconModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-semibold border border-surface-container-highest transition-colors whitespace-nowrap cursor-pointer"
+              title="Đối chiếu mã chứng từ và kiểm tra tính hợp lệ"
+            >
+              <span className="material-symbols-outlined text-base text-primary">fact_check</span>
+              <span>Đối Chiếu Mã</span>
+            </button>
+            {hasPerm('finance.export') && (
               <button
+                type="button"
+                onClick={() => exportFinanceToExcel(filteredTransactions)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-semibold border border-surface-container-highest transition-colors whitespace-nowrap cursor-pointer"
+                title="Xuất Sổ Quỹ ra định dạng Excel (.xlsx)"
+              >
+                <span className="material-symbols-outlined text-base text-emerald-700">file_download</span>
+                <span>Xuất Excel</span>
+              </button>
+            )}
+          </div>
+
+          {/* Primary Create Actions */}
+          {hasPerm('finance.create') && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
                 onClick={() => openCreateModal('INCOME')}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-semibold transition-all shadow-xs active:scale-98"
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-semibold transition-all shadow-xs active:scale-98 whitespace-nowrap cursor-pointer"
               >
                 <span className="material-symbols-outlined text-base">add_circle</span>
                 <span>Lập Phiếu Thu</span>
               </button>
               <button
+                type="button"
                 onClick={() => openCreateModal('EXPENSE')}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-800 hover:bg-amber-900 text-white text-xs font-semibold transition-all shadow-xs active:scale-98"
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-800 hover:bg-amber-900 text-white text-xs font-semibold transition-all shadow-xs active:scale-98 whitespace-nowrap cursor-pointer"
               >
                 <span className="material-symbols-outlined text-base">remove_circle</span>
                 <span>Lập Phiếu Chi</span>
               </button>
-            </>
+            </div>
           )}
         </div>
       </div>
 
       {/* Financial KPIs Banner */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-surface-container-lowest p-5 rounded-2xl border border-surface-container-high shadow-xs">
-          <div className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider">
+        <div className="bg-surface-container-lowest p-4 sm:p-5 rounded-2xl border border-surface-container-high shadow-xs min-w-0">
+          <div className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider truncate">
             Tồn quỹ thực tế
           </div>
-          <div className="text-2xl font-black text-emerald-800 font-numeric-data mt-2">
+          <div className="text-xl sm:text-2xl font-black text-emerald-800 font-numeric-data mt-2 truncate">
             {formatCurrencyVND(currentBalance)}
           </div>
-          <div className="text-[11px] text-on-surface-variant mt-1">
+          <div className="text-[11px] text-on-surface-variant mt-1 truncate">
             Số dư tiền mặt đã kiểm toán
           </div>
         </div>
 
-        <div className="bg-surface-container-lowest p-5 rounded-2xl border border-surface-container-high shadow-xs">
-          <div className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider">
+        <div className="bg-surface-container-lowest p-4 sm:p-5 rounded-2xl border border-surface-container-high shadow-xs min-w-0">
+          <div className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider truncate">
             Tổng thu lũy kế
           </div>
-          <div className="text-2xl font-black text-slate-800 font-numeric-data mt-2">
+          <div className="text-xl sm:text-2xl font-black text-slate-800 font-numeric-data mt-2 truncate">
             {formatCurrencyVND(totalIncome)}
           </div>
-          <div className="text-[11px] text-emerald-700 font-medium mt-1">
+          <div className="text-[11px] text-emerald-700 font-medium mt-1 truncate">
             Đã duyệt: {approvedTx.filter((t) => t.transactionType === 'INCOME').length} phiếu
           </div>
         </div>
 
-        <div className="bg-surface-container-lowest p-5 rounded-2xl border border-surface-container-high shadow-xs">
-          <div className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider">
+        <div className="bg-surface-container-lowest p-4 sm:p-5 rounded-2xl border border-surface-container-high shadow-xs min-w-0">
+          <div className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider truncate">
             Tổng chi lũy kế
           </div>
-          <div className="text-2xl font-black text-slate-800 font-numeric-data mt-2">
+          <div className="text-xl sm:text-2xl font-black text-slate-800 font-numeric-data mt-2 truncate">
             {formatCurrencyVND(totalExpense)}
           </div>
-          <div className="text-[11px] text-amber-700 font-medium mt-1">
+          <div className="text-[11px] text-amber-700 font-medium mt-1 truncate">
             Đã duyệt: {approvedTx.filter((t) => t.transactionType === 'EXPENSE').length} phiếu
           </div>
         </div>
 
-        <div className="bg-surface-container-lowest p-5 rounded-2xl border border-surface-container-high shadow-xs">
-          <div className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider">
+        <div className="bg-surface-container-lowest p-4 sm:p-5 rounded-2xl border border-surface-container-high shadow-xs min-w-0">
+          <div className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider truncate">
             Bản nháp chờ duyệt
           </div>
-          <div className="text-2xl font-black text-orange-800 font-numeric-data mt-2">
+          <div className="text-xl sm:text-2xl font-black text-orange-800 font-numeric-data mt-2 truncate">
             {draftCount} <span className="text-xs font-medium text-slate-600">phiếu</span>
           </div>
-          <div className="text-[11px] text-orange-700 font-medium mt-1">
+          <div className="text-[11px] text-orange-700 font-medium mt-1 truncate">
             {draftCount > 0 ? 'Cần Trưởng ấp ký duyệt' : 'Đã duyệt toàn bộ'}
           </div>
         </div>
@@ -406,18 +453,27 @@ export function FinanceView({
             />
           </div>
 
-          <select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            className="px-3 py-2 rounded-xl border border-surface-container-highest bg-surface text-xs font-medium text-on-surface"
-          >
-            <option value="ALL">Tất cả hạng mục thu/chi</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.type === 'INCOME' ? '[Thu]' : '[Chi]'} {c.name}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="flex-1 sm:flex-initial px-3 py-2 rounded-xl border border-surface-container-highest bg-surface text-xs font-medium text-on-surface max-w-full sm:max-w-xs truncate cursor-pointer"
+            >
+              <option value="ALL">Tất cả hạng mục ({visibleCategories.length})</option>
+              {visibleCategories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.type === 'INCOME' ? '[Thu]' : '[Chi]'} {c.name}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => setIsCategoryModalOpen(true)}
+              className="p-2 rounded-xl border border-surface-container-highest bg-surface hover:bg-surface-container-high text-on-surface-variant hover:text-primary transition-colors shrink-0 cursor-pointer"
+              title="Cài đặt và phân quyền danh mục thu/chi"
+            >
+              <span className="material-symbols-outlined text-base">settings</span>
+            </button>
+          </div>
         </div>
 
         {/* Tab Filter Chips */}
@@ -433,7 +489,7 @@ export function FinanceView({
             <button
               key={tab.id}
               onClick={() => setActiveFilter(tab.id as typeof activeFilter)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
                 activeFilter === tab.id
                   ? 'bg-primary text-white shadow-2xs'
                   : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-high'
@@ -446,9 +502,9 @@ export function FinanceView({
       </div>
 
       {/* Transaction Table */}
-      <div className="bg-surface-container-lowest rounded-2xl border border-surface-container-high overflow-hidden shadow-xs">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
+      <div className="bg-surface-container-lowest rounded-2xl border border-surface-container-high overflow-hidden shadow-xs min-w-0 max-w-full">
+        <div className="overflow-x-auto max-w-full">
+          <table className="w-full text-left border-collapse text-xs min-w-[720px]">
             <thead>
               <tr className="bg-surface-container border-b border-surface-container-high text-on-surface-variant font-semibold">
                 <th className="py-3 px-4 w-32">Số chứng từ</th>
@@ -741,13 +797,16 @@ export function FinanceView({
                     onChange={(e) => setCategoryId(e.target.value)}
                     className="w-full px-3.5 py-2 rounded-xl border border-surface-container-highest bg-surface text-xs"
                   >
-                    {categories
+                    {visibleCategories
                       .filter((c) => c.type === txType)
-                      .map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
+                      .map((c) => {
+                        const canUse = canUseCategory(c);
+                        return (
+                          <option key={c.id} value={c.id} disabled={!canUse}>
+                            {c.name} {!canUse ? '(Giới hạn quyền lập)' : ''}
+                          </option>
+                        );
+                      })}
                   </select>
                 </div>
               </div>
@@ -865,6 +924,18 @@ export function FinanceView({
         onClose={() => setIsReconModalOpen(false)}
         onViewVoucher={(tx) => setSelectedVoucherForA4(tx)}
         settings={settings}
+      />
+
+      {/* Category Manager & RBAC Modal */}
+      <FinanceCategoryManagerModal
+        isOpen={isCategoryModalOpen}
+        onClose={() => setIsCategoryModalOpen(false)}
+        categories={categories}
+        usageCounts={categoryUsageCounts}
+        userProfile={userProfile}
+        user={user}
+        hasPerm={hasPerm}
+        onRefresh={loadData}
       />
     </div>
   );

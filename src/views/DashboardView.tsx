@@ -4,6 +4,7 @@ import { useSettings } from '../context/SettingsContext';
 import { getResidents, getHouseholds, getFinanceTransactions, getGiftCampaigns, getAuditLogs } from '../services/db';
 import { Resident, Household, FinanceTransaction, GiftCampaign, AuditLog } from '../types';
 import { formatCurrencyVND, formatDateVN } from '../utils/numberToWords';
+import { PWAInstallButton } from '../components/PWAInstallButton';
 
 interface DashboardViewProps {
   onNavigate: (tab: string) => void;
@@ -153,6 +154,9 @@ export function DashboardView({
           </div>
         </div>
       </div>
+
+      {/* PWA Install Promo Card for Easy Device Installation */}
+      <PWAInstallButton variant="card" />
 
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
